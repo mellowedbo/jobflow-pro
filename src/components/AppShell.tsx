@@ -16,6 +16,7 @@ import {
   TrendingDown,
   Users,
   FileBarChart,
+  Settings,
   Moon,
   Sun,
   Menu,
@@ -35,6 +36,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import AuthPage from '@/components/AuthPage';
+import AccountSettingsView from '@/components/AccountSettingsView';
 import DashboardView from '@/components/DashboardView';
 import JobsView from '@/components/JobsView';
 import CompletedJobsView from '@/components/CompletedJobsView';
@@ -59,6 +61,7 @@ const navItems: NavItem[] = [
   { key: 'costs', label: 'Costs & P&L', icon: TrendingDown },
   { key: 'customers', label: 'Customers', icon: Users },
   { key: 'reports', label: 'Reports', icon: FileBarChart },
+  { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
 function ThemeToggle() {
@@ -190,6 +193,8 @@ function ViewRenderer({ view }: { view: ViewPage }) {
       return <CustomersView />;
     case 'reports':
       return <ReportsView />;
+    case 'settings':
+      return <AccountSettingsView />;
     default:
       return <DashboardView />;
   }

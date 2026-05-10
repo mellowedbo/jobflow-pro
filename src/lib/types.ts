@@ -121,4 +121,4 @@ export interface ActivityLog {
   type: 'job' | 'billing' | 'inventory' | 'cost' | 'system';
 }
 
-export type ViewPage = 'dashboard' | 'jobs' | 'completed' | 'billing' | 'inventory' | 'costs' | 'customers' | 'reports';
+export type ViewPage = 'dashboard' | 'jobs' | 'completed' | 'billing' | 'inventory' | 'costs' | 'customers' | 'reports' | 'settings';
