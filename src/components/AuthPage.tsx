@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient, isSupabaseConfigured, getSupabaseUrl } from '@/lib/supabase-browser';
+import { createClient, isSupabaseConfigured, getSupabaseDebugInfo } from '@/lib/supabase-browser';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,7 @@ import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2
 
 export default function AuthPage() {
   const supabaseConfigured = isSupabaseConfigured();
+  const debugInfo = getSupabaseDebugInfo();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -87,12 +88,11 @@ export default function AuthPage() {
             setError(msg);
           }
         }
-        // If no error, onAuthStateChange in AppShell will detect the session and redirect
       }
     } catch (err: any) {
       const msg = err?.message || '';
       if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Network request failed')) {
-        setError('Cannot connect to Supabase. This usually means:\n1. Supabase env vars are not set in Vercel\n2. Your Supabase project is paused\n3. The Supabase URL is incorrect\n\nPlease check your Vercel project settings → Environment Variables.');
+        setError('Cannot connect to Supabase. Debug info: ' + debugInfo + '\n\nThis usually means:\n1. Supabase env vars are not set in Vercel\n2. Your Supabase project is paused\n3. The Supabase URL is incorrect');
       } else {
         setError(msg || 'An unexpected error occurred. Please try again.');
       }
@@ -136,8 +136,15 @@ export default function AuthPage() {
                 </li>
                 <li>Go to <strong>Deployments</strong> → Click <strong>Redeploy</strong></li>
               </ol>
-              <p className="mt-2">Detected URL: <code className="bg-red-100 dark:bg-red-900/30 px-1 rounded">{getSupabaseUrl()}</code></p>
+              <p className="mt-2 font-mono">Debug: <code className="bg-red-100 dark:bg-red-900/30 px-1 rounded">{debugInfo}</code></p>
             </div>
+          </div>
+        )}
+
+        {/* Debug info even when configured */}
+        {supabaseConfigured && (
+          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-mono text-center">
+            Supabase connected: {debugInfo}
           </div>
         )}
 
