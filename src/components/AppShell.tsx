@@ -177,7 +177,14 @@ function ViewRenderer({ view }: { view: ViewPage }) {
 export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const currentView = useStore((s) => s.currentView);
+  const isInitialized = useStore((s) => s.isInitialized);
+  const fetchAllData = useStore((s) => s.fetchAllData);
   const currentLabel = navItems.find((n) => n.key === currentView)?.label ?? 'Dashboard';
+
+  // Fetch data from Supabase on first mount
+  if (!isInitialized) {
+    fetchAllData();
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
