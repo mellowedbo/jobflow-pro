@@ -121,4 +121,62 @@ export interface ActivityLog {
   type: 'job' | 'billing' | 'inventory' | 'cost' | 'system';
 }
 
-export type ViewPage = 'dashboard' | 'jobs' | 'completed' | 'billing' | 'inventory' | 'costs' | 'customers' | 'reports' | 'settings';
+export type UserRole = 'operator' | 'manager' | 'accountant' | 'owner';
+
+export type ViewPage = 'dashboard' | 'jobs' | 'completed' | 'billing' | 'inventory' | 'costs' | 'customers' | 'reports' | 'settings' | 'analytics' | 'depthmap';
+
+/** Role-based page access map — true means the role CAN access the page */
+export const ROLE_ACCESS: Record<UserRole, Record<ViewPage, boolean>> = {
+  operator: {
+    dashboard: true,
+    jobs: true,
+    completed: true,
+    billing: false,
+    inventory: true,
+    costs: false,
+    customers: false,
+    reports: false,
+    settings: false,
+    analytics: false,
+    depthmap: false,
+  },
+  manager: {
+    dashboard: true,
+    jobs: true,
+    completed: true,
+    billing: false,
+    inventory: true,
+    costs: true,
+    customers: true,
+    reports: true,
+    settings: false,
+    analytics: true,
+    depthmap: true,
+  },
+  accountant: {
+    dashboard: true,
+    jobs: true,
+    completed: true,
+    billing: true,
+    inventory: false,
+    costs: true,
+    customers: true,
+    reports: true,
+    settings: false,
+    analytics: true,
+    depthmap: false,
+  },
+  owner: {
+    dashboard: true,
+    jobs: true,
+    completed: true,
+    billing: true,
+    inventory: true,
+    costs: true,
+    customers: true,
+    reports: true,
+    settings: true,
+    analytics: true,
+    depthmap: true,
+  },
+};

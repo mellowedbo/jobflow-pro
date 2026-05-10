@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser';
-import type { ViewPage } from '@/lib/types';
+import type { ViewPage, UserRole } from '@/lib/types';
+import { ROLE_ACCESS } from '@/lib/types';
 import type { User } from '@supabase/supabase-js';
 import {
   LayoutDashboard,
@@ -24,7 +25,10 @@ import {
   LogOut,
   Loader2,
   Eye,
-  AlertTriangle,
+  BarChart3,
+  Map,
+  Shield,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -32,11 +36,19 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/s
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
 import AuthPage from '@/components/AuthPage';
 import AccountSettingsView from '@/components/AccountSettingsView';
 import DashboardView from '@/components/DashboardView';
@@ -47,14 +59,17 @@ import InventoryView from '@/components/InventoryView';
 import CostsView from '@/components/CostsView';
 import CustomersView from '@/components/CustomersView';
 import ReportsView from '@/components/ReportsView';
+import AnalyticsView from '@/components/AnalyticsView';
+import DepthMapView from '@/components/DepthMapView';
 
 interface NavItem {
   key: ViewPage;
   label: string;
   icon: React.ElementType;
+  badge?: string;
 }
 
-const navItems: NavItem[] = [
+const allNavItems: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'jobs', label: 'Active Jobs', icon: Briefcase },
   { key: 'completed', label: 'Completed', icon: CheckCircle2 },
@@ -63,8 +78,24 @@ const navItems: NavItem[] = [
   { key: 'costs', label: 'Costs & P&L', icon: TrendingDown },
   { key: 'customers', label: 'Customers', icon: Users },
   { key: 'reports', label: 'Reports', icon: FileBarChart },
+  { key: 'analytics', label: 'Analytics', icon: BarChart3, badge: 'Pro' },
+  { key: 'depthmap', label: 'Depth Map', icon: Map, badge: 'Beta' },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  owner: 'Owner',
+  manager: 'Manager',
+  accountant: 'Accountant',
+  operator: 'Operator',
+};
+
+const ROLE_COLORS: Record<UserRole, string> = {
+  owner: 'bg-purple-200 text-purple-800 dark:bg-purple-800 dark:text-purple-200',
+  manager: 'bg-emerald-200 text-emerald-800 dark:bg-emerald-800 dark:text-emerald-200',
+  accountant: 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200',
+  operator: 'bg-orange-200 text-orange-800 dark:bg-orange-800 dark:text-orange-200',
+};
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -82,6 +113,32 @@ function ThemeToggle() {
   );
 }
 
+function RoleSwitcher() {
+  const currentRole = useStore((s) => s.currentRole);
+  const setCurrentRole = useStore((s) => s.setCurrentRole);
+
+  return (
+    <div className="flex items-center gap-2">
+      <Shield className="h-3.5 w-3.5 text-sidebar-foreground/60 shrink-0" />
+      <Select value={currentRole} onValueChange={(v) => setCurrentRole(v as UserRole)}>
+        <SelectTrigger className="h-7 flex-1 border-sidebar-border bg-sidebar-accent/50 text-sidebar-foreground text-[11px] font-medium px-2 py-0 gap-1">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(ROLE_LABELS) as UserRole[]).map((role) => (
+            <SelectItem key={role} value={role} className="text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`inline-block h-2 w-2 rounded-full ${ROLE_COLORS[role].split(' ')[0]}`} />
+                {ROLE_LABELS[role]}
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function SidebarContent({ onNavClick, user, isGuest, onExitGuest, onSignOut }: {
   onNavClick?: () => void;
   user: User | null;
@@ -89,13 +146,26 @@ function SidebarContent({ onNavClick, user, isGuest, onExitGuest, onSignOut }: {
   onExitGuest: () => void;
   onSignOut: () => void;
 }) {
-  const { currentView, setCurrentView } = useStore();
+  const { currentView, setCurrentView, currentRole } = useStore();
   const activeJobs = useStore((s) => s.jobs.filter((j) => j.status === 'active' || j.status === 'scheduled').length);
+
+  const visibleNavItems = useMemo(() => {
+    const access = ROLE_ACCESS[currentRole];
+    return allNavItems.filter((item) => access[item.key]);
+  }, [currentRole]);
 
   const userName = isGuest
     ? 'Guest User'
     : user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Operator';
   const initials = userName.substring(0, 2).toUpperCase();
+
+  // If current view is not accessible with current role, redirect to dashboard
+  useEffect(() => {
+    const access = ROLE_ACCESS[currentRole];
+    if (!access[currentView]) {
+      setCurrentView('dashboard');
+    }
+  }, [currentRole, currentView, setCurrentView]);
 
   return (
     <div className="flex h-full flex-col">
@@ -115,7 +185,7 @@ function SidebarContent({ onNavClick, user, isGuest, onExitGuest, onSignOut }: {
       {/* Navigation */}
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="flex flex-col gap-1">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = currentView === item.key;
             const Icon = item.icon;
             return (
@@ -142,6 +212,18 @@ function SidebarContent({ onNavClick, user, isGuest, onExitGuest, onSignOut }: {
                           {activeJobs}
                         </span>
                       )}
+                      {item.badge && (
+                        <Badge
+                          variant="secondary"
+                          className={`ml-auto text-[9px] px-1.5 py-0 h-4 font-bold ${
+                            item.badge === 'Pro'
+                              ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400'
+                              : 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                          }`}
+                        >
+                          {item.badge}
+                        </Badge>
+                      )}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="hidden lg:block">
@@ -153,6 +235,13 @@ function SidebarContent({ onNavClick, user, isGuest, onExitGuest, onSignOut }: {
           })}
         </nav>
       </ScrollArea>
+
+      <Separator className="bg-sidebar-border" />
+
+      {/* Role Switcher */}
+      <div className="px-4 py-2">
+        <RoleSwitcher />
+      </div>
 
       <Separator className="bg-sidebar-border" />
 
@@ -204,6 +293,10 @@ function ViewRenderer({ view }: { view: ViewPage }) {
       return <CustomersView />;
     case 'reports':
       return <ReportsView />;
+    case 'analytics':
+      return <AnalyticsView />;
+    case 'depthmap':
+      return <DepthMapView />;
     case 'settings':
       return <AccountSettingsView />;
     default:
@@ -214,20 +307,21 @@ function ViewRenderer({ view }: { view: ViewPage }) {
 export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const isSupabaseReady = !isSupabaseConfigured();
+  const [authLoading, setAuthLoading] = useState(isSupabaseReady ? false : true);
   const isGuest = useStore((s) => s.isGuest);
   const enterGuestMode = useStore((s) => s.enterGuestMode);
   const exitGuestMode = useStore((s) => s.exitGuestMode);
   const currentView = useStore((s) => s.currentView);
+  const currentRole = useStore((s) => s.currentRole);
   const isInitialized = useStore((s) => s.isInitialized);
   const fetchAllData = useStore((s) => s.fetchAllData);
-  const currentLabel = navItems.find((n) => n.key === currentView)?.label ?? 'Dashboard';
+  const currentLabel = allNavItems.find((n) => n.key === currentView)?.label ?? 'Dashboard';
 
   // Listen for auth state changes
   useEffect(() => {
     // If Supabase not configured, skip auth check
     if (!isSupabaseConfigured()) {
-      setAuthLoading(false);
       return;
     }
 
@@ -369,6 +463,10 @@ export default function AppShell() {
           </Sheet>
           <h2 className="text-base font-semibold">{currentLabel}</h2>
           <div className="ml-auto flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] font-medium px-2 py-0.5 gap-1">
+              <Shield className="h-3 w-3" />
+              {ROLE_LABELS[currentRole]}
+            </Badge>
             <span className="hidden sm:inline text-xs text-muted-foreground font-mono">
               {new Date().toLocaleDateString('en-IN', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
             </span>

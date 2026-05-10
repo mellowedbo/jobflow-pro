@@ -7,6 +7,7 @@ import type {
   OverheadCost,
   ActivityLog,
   ViewPage,
+  UserRole,
   Payment,
   InternalCost,
   PaymentStatus,
@@ -129,6 +130,10 @@ interface AppState {
   currentView: ViewPage;
   setCurrentView: (view: ViewPage) => void;
 
+  // Role-Based Access Control
+  currentRole: UserRole;
+  setCurrentRole: (role: UserRole) => void;
+
   // Data
   jobs: Job[];
   jobCounter: number;
@@ -212,6 +217,10 @@ export const useStore = create<AppState>()(
     // Navigation
     currentView: 'dashboard',
     setCurrentView: (view) => set({ currentView: view }),
+
+    // Role-Based Access Control
+    currentRole: 'owner',
+    setCurrentRole: (role) => set({ currentRole: role }),
 
     // Data — starts empty until fetched
     jobs: [],
