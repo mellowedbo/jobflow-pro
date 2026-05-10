@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/lib/auth';
+import { createClient } from '@/lib/supabase-browser';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function AuthPage() {
-  const { signIn, signUp } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,40 +25,71 @@ export default function AuthPage() {
     setNeedsConfirmation(false);
     setLoading(true);
 
-    if (isSignUp) {
-      if (!fullName.trim()) {
-        setError('Please enter your full name');
-        setLoading(false);
-        return;
-      }
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters');
-        setLoading(false);
-        return;
-      }
-      const { error } = await signUp(email, password, fullName);
-      if (error) {
-        setError(error);
-      } else {
-        setSuccess('Account created! Check your email for a verification link, then come back to sign in.');
-        setNeedsConfirmation(true);
-        setIsSignUp(false);
-      }
-    } else {
-      const { error } = await signIn(email, password);
-      if (error) {
-        // Show user-friendly error messages
-        if (error.includes('Email not confirmed') || error.includes('email_not_confirmed')) {
-          setError('Your email is not verified yet. Please check your inbox (and spam folder) for the verification email, then try again.');
-          setNeedsConfirmation(true);
-        } else if (error.includes('Invalid login credentials') || error.includes('invalid_credentials')) {
-          setError('Invalid email or password. Please check your credentials and try again.');
-        } else {
-          setError(error);
+    const supabase = createClient();
+
+    try {
+      if (isSignUp) {
+        if (!fullName.trim()) {
+          setError('Please enter your full name');
+          setLoading(false);
+          return;
         }
+        if (password.length < 6) {
+          setError('Password must be at least 6 characters');
+          setLoading(false);
+          return;
+        }
+
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: fullName },
+          },
+        });
+
+        if (signUpError) {
+          setError(signUpError.message);
+          setLoading(false);
+          return;
+        }
+
+        // Check if user was auto-confirmed (email confirmation disabled)
+        // If so, they're already signed in — the onAuthStateChange in AppShell will pick it up
+        if (data.user && data.session) {
+          // Auto-confirmed and signed in — AppShell will detect the session change
+          setSuccess('Account created! You are now signed in...');
+        } else if (data.user && !data.session) {
+          // Email confirmation required
+          setSuccess('Account created! Check your email for a verification link, then come back to sign in.');
+          setNeedsConfirmation(true);
+          setIsSignUp(false);
+        } else {
+          setSuccess('Account created! You can now sign in.');
+          setIsSignUp(false);
+        }
+      } else {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) {
+          // Show user-friendly error messages
+          const msg = signInError.message || '';
+          if (msg.includes('Email not confirmed') || msg.includes('email_not_confirmed')) {
+            setError('Your email is not verified yet. Please check your inbox (and spam folder) for the verification email, then try again.');
+            setNeedsConfirmation(true);
+          } else if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials')) {
+            setError('Invalid email or password. Please check your credentials and try again.');
+          } else {
+            setError(msg);
+          }
+        }
+        // If no error, onAuthStateChange in AppShell will detect the session and redirect
       }
-      // If no error, the auth state change listener in AuthProvider
-      // will automatically update the UI
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred. Please try again.');
     }
 
     setLoading(false);
@@ -156,7 +186,7 @@ export default function AuthPage() {
 
               {needsConfirmation && !isSignUp && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs text-amber-700 dark:text-amber-400">
-                  <strong>Tip:</strong> If you didn&apos;t receive the email, check your spam folder. You can also ask your admin to disable email confirmation in Supabase Dashboard → Authentication → Settings → turn off &quot;Confirm email&quot;.
+                  <strong>Tip:</strong> If you didn&apos;t receive the email, check your spam folder. You can also ask your admin to disable email confirmation in Supabase Dashboard &rarr; Authentication &rarr; Settings &rarr; turn off &quot;Confirm email&quot;.
                 </div>
               )}
 
