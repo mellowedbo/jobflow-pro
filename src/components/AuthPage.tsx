@@ -1,16 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient, isSupabaseConfigured, getSupabaseDebugInfo } from '@/lib/supabase-browser';
+import { createClient, isSupabaseConfigured, getSupabaseDebugInfo, testSupabaseConnection, getSupabaseUrl } from '@/lib/supabase-browser';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, WifiOff } from 'lucide-react';
+import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, WifiOff, RefreshCw, Activity } from 'lucide-react';
+
+interface ConnectionTestResult {
+  ok: boolean;
+  status: number | null;
+  message: string;
+  url: string;
+  serverResult?: any;
+}
 
 export default function AuthPage() {
   const supabaseConfigured = isSupabaseConfigured();
   const debugInfo = getSupabaseDebugInfo();
+  const supabaseUrl = getSupabaseUrl();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +28,43 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
+
+  // Connection test state
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const runConnectionTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+
+    try {
+      // Test from browser
+      const browserResult = await testSupabaseConnection();
+
+      // Test from server (bypasses CORS)
+      let serverResult = null;
+      try {
+        const serverRes = await fetch('/api/health/supabase');
+        serverResult = await serverRes.json();
+      } catch {
+        serverResult = { ok: false, error: 'Cannot reach our own API route — app may not be deployed correctly' };
+      }
+
+      setTestResult({
+        ...browserResult,
+        serverResult,
+      });
+    } catch (err: any) {
+      setTestResult({
+        ok: false,
+        status: null,
+        message: err?.message || 'Test failed',
+        url: supabaseUrl,
+      });
+    }
+
+    setTesting(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,7 +138,14 @@ export default function AuthPage() {
     } catch (err: any) {
       const msg = err?.message || '';
       if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Network request failed')) {
-        setError('Cannot connect to Supabase. Debug info: ' + debugInfo + '\n\nThis usually means:\n1. Supabase env vars are not set in Vercel\n2. Your Supabase project is paused\n3. The Supabase URL is incorrect');
+        setError(
+          `Cannot connect to Supabase at ${supabaseUrl}\n\n` +
+          'This usually means:\n' +
+          '1. Your Supabase project is PAUSED — go to supabase.com and click "Restore"\n' +
+          '2. The Supabase URL is wrong — it should look like https://abc123.supabase.co\n' +
+          '3. The anon key is wrong — make sure you copied the "anon public" key, not the service role key\n\n' +
+          'Click "Test Connection" below for a detailed diagnosis.'
+        );
       } else {
         setError(msg || 'An unexpected error occurred. Please try again.');
       }
@@ -141,10 +194,78 @@ export default function AuthPage() {
           </div>
         )}
 
-        {/* Debug info even when configured */}
+        {/* Green connection banner with Test button */}
         {supabaseConfigured && (
-          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-mono text-center">
-            Supabase connected: {debugInfo}
+          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono">
+                Supabase URL: {supabaseUrl}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                onClick={runConnectionTest}
+                disabled={testing}
+              >
+                {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Activity className="h-3 w-3" />}
+                Test Connection
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Connection test results */}
+        {testResult && (
+          <div className={`mb-4 rounded-lg border p-3 text-xs ${
+            testResult.ok
+              ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-700'
+              : 'border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700'
+          }`}>
+            <div className="font-semibold mb-2 flex items-center gap-1">
+              {testResult.ok ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+              ) : (
+                <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+              )}
+              Connection Test Result
+            </div>
+            <div className="space-y-2 font-mono">
+              <div>
+                <span className="font-bold">Browser → Supabase:</span>{' '}
+                {testResult.ok ? (
+                  <span className="text-emerald-700 dark:text-emerald-400">{testResult.message}</span>
+                ) : (
+                  <span className="text-amber-700 dark:text-amber-400 whitespace-pre-line">{testResult.message}</span>
+                )}
+              </div>
+              {testResult.serverResult && (
+                <div>
+                  <span className="font-bold">Server → Supabase:</span>{' '}
+                  {testResult.serverResult.ok ? (
+                    <span className="text-emerald-700 dark:text-emerald-400">
+                      OK (REST: HTTP {testResult.serverResult.restApi?.status}, Auth: {testResult.serverResult.authApi?.status})
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 dark:text-amber-400">
+                      {testResult.serverResult.error || 'Failed'}
+                      {testResult.serverResult.hint && <span className="block mt-1">{testResult.serverResult.hint}</span>}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            {!testResult.ok && (
+              <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400 border-t border-amber-200 dark:border-amber-800 pt-2">
+                <strong>Quick fixes:</strong>
+                <ul className="list-disc ml-4 mt-1 space-y-0.5">
+                  <li>Check your Supabase project is not <strong>paused</strong> at supabase.com dashboard</li>
+                  <li>Verify URL format: <code>https://your-ref.supabase.co</code> (no trailing slash)</li>
+                  <li>Make sure you used the <strong>anon public</strong> key, not the service role key</li>
+                  <li>In Supabase, go to Authentication → Settings → disable &quot;Confirm email&quot; for testing</li>
+                </ul>
+              </div>
+            )}
           </div>
         )}
 

@@ -83,9 +83,9 @@ function ThemeToggle() {
 function SidebarContent({ onNavClick, user }: { onNavClick?: () => void; user: User | null }) {
   const { currentView, setCurrentView } = useStore();
   const activeJobs = useStore((s) => s.jobs.filter((j) => j.status === 'active' || j.status === 'scheduled').length);
-  const supabase = createClient();
 
   const handleSignOut = async () => {
+    const supabase = createClient();
     await supabase.auth.signOut();
   };
 
@@ -214,8 +214,14 @@ export default function AppShell() {
     const supabase = createClient();
 
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('[DrillOps] getSession error:', error.message);
+      }
       setUser(session?.user ?? null);
+      setAuthLoading(false);
+    }).catch((err) => {
+      console.error('[DrillOps] getSession failed:', err?.message || err);
       setAuthLoading(false);
     });
 
