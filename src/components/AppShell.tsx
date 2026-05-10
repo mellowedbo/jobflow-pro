@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase-browser';
 import type { ViewPage } from '@/lib/types';
 import type { User } from '@supabase/supabase-js';
 import {
@@ -34,7 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import AuthForm from '@/components/AuthForm';
+import AuthPage from '@/components/AuthPage';
 import DashboardView from '@/components/DashboardView';
 import JobsView from '@/components/JobsView';
 import CompletedJobsView from '@/components/CompletedJobsView';
@@ -80,12 +80,14 @@ function ThemeToggle() {
 function SidebarContent({ onNavClick, user }: { onNavClick?: () => void; user: User | null }) {
   const { currentView, setCurrentView } = useStore();
   const activeJobs = useStore((s) => s.jobs.filter((j) => j.status === 'active' || j.status === 'scheduled').length);
+  const supabase = createClient();
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
   };
 
-  const initials = user?.email?.substring(0, 2).toUpperCase() || 'OP';
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Operator';
+  const initials = userName.substring(0, 2).toUpperCase();
 
   return (
     <div className="flex h-full flex-col">
@@ -146,14 +148,14 @@ function SidebarContent({ onNavClick, user }: { onNavClick?: () => void; user: U
 
       <Separator className="bg-sidebar-border" />
 
-      {/* Footer with user info */}
+      {/* Footer with user info & sign out */}
       <div className="flex items-center gap-3 px-4 py-3">
         <Avatar className="h-8 w-8">
           <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-xs font-bold">{initials}</AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-sidebar-foreground truncate">{user?.email || 'Operator'}</p>
-          <p className="text-[10px] text-sidebar-foreground/50 truncate">Logged in</p>
+          <p className="text-xs font-medium text-sidebar-foreground truncate">{userName}</p>
+          <p className="text-[10px] text-sidebar-foreground/50 truncate">{user?.email}</p>
         </div>
         <ThemeToggle />
         <Button
@@ -204,6 +206,8 @@ export default function AppShell() {
 
   // Listen for auth state changes
   useEffect(() => {
+    const supabase = createClient();
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -242,9 +246,9 @@ export default function AppShell() {
     );
   }
 
-  // Show auth form if not logged in
+  // Show auth page if not logged in
   if (!user) {
-    return <AuthForm />;
+    return <AuthPage />;
   }
 
   // Show loading while fetching data

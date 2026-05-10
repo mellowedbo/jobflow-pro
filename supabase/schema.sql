@@ -1,6 +1,6 @@
 -- =============================================
 -- DrillOps Pro — Supabase Database Schema
--- WITH USER AUTHENTICATION
+-- WITH AUTHENTICATION
 -- Run this in Supabase SQL Editor
 -- =============================================
 
@@ -8,14 +8,14 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =============================================
--- PROFILES (extends Supabase Auth users)
+-- PROFILES TABLE (extends Supabase auth.users)
 -- =============================================
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name TEXT,
   company_name TEXT,
-  role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin', 'operator', 'viewer')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Auto-create profile on signup
@@ -25,7 +25,7 @@ BEGIN
   INSERT INTO public.profiles (id, full_name)
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email)
+    COALESCE(NEW.raw_user_meta_data->>'full_name', '')
   );
   RETURN NEW;
 END;
@@ -166,9 +166,10 @@ CREATE TABLE activity_log (
 -- APP STATE
 -- =============================================
 CREATE TABLE app_state (
-  key TEXT PRIMARY KEY,
+  key TEXT NOT NULL,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  value JSONB NOT NULL DEFAULT '{}'
+  value JSONB NOT NULL DEFAULT '{}',
+  PRIMARY KEY (key, user_id)
 );
 
 -- =============================================
@@ -176,23 +177,19 @@ CREATE TABLE app_state (
 -- =============================================
 CREATE INDEX idx_jobs_user ON jobs(user_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
-CREATE INDEX idx_jobs_customer ON jobs(customer_name);
 CREATE INDEX idx_job_services_job ON job_services(job_id);
 CREATE INDEX idx_job_custom_items_job ON job_custom_items(job_id);
 CREATE INDEX idx_job_payments_job ON job_payments(job_id);
 CREATE INDEX idx_job_internal_costs_job ON job_internal_costs(job_id);
 CREATE INDEX idx_inventory_items_user ON inventory_items(user_id);
 CREATE INDEX idx_inventory_tx_item ON inventory_transactions(item_id);
-CREATE INDEX idx_inventory_tx_date ON inventory_transactions(date);
 CREATE INDEX idx_overhead_costs_user ON overhead_costs(user_id);
-CREATE INDEX idx_overhead_costs_date ON overhead_costs(date);
 CREATE INDEX idx_activity_log_user ON activity_log(user_id);
 CREATE INDEX idx_activity_log_timestamp ON activity_log(timestamp DESC);
-CREATE INDEX idx_app_state_user ON app_state(user_id);
 
 -- =============================================
--- ROW LEVEL SECURITY — USER-SCOPED!
--- Each user can only see/edit THEIR OWN data
+-- ROW LEVEL SECURITY — PER-USER DATA
+-- Users can only see and modify their own data
 -- =============================================
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
@@ -206,101 +203,103 @@ ALTER TABLE overhead_costs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_state ENABLE ROW LEVEL SECURITY;
 
--- Profiles: users can read their own, admins can read all
-CREATE POLICY "Users read own profile" ON profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Users update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+-- Profiles: users can read/update their own profile
+CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
 
--- Jobs: users see only their own
-CREATE POLICY "Users read own jobs" ON jobs FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users insert own jobs" ON jobs FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users update own jobs" ON jobs FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Users delete own jobs" ON jobs FOR DELETE USING (auth.uid() = user_id);
+-- Jobs: full CRUD on own jobs
+CREATE POLICY "Users can view own jobs" ON jobs FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create own jobs" ON jobs FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own jobs" ON jobs FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own jobs" ON jobs FOR DELETE USING (auth.uid() = user_id);
 
--- Job relations: accessible if user owns the parent job
-CREATE POLICY "Users read own job services" ON job_services FOR SELECT USING (
+-- Job relations: access through job ownership
+CREATE POLICY "Users can view own job services" ON job_services FOR SELECT USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_services.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users insert own job services" ON job_services FOR INSERT WITH CHECK (
+CREATE POLICY "Users can create own job services" ON job_services FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_services.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users update own job services" ON job_services FOR UPDATE USING (
+CREATE POLICY "Users can update own job services" ON job_services FOR UPDATE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_services.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users delete own job services" ON job_services FOR DELETE USING (
+CREATE POLICY "Users can delete own job services" ON job_services FOR DELETE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_services.job_id AND jobs.user_id = auth.uid())
 );
 
-CREATE POLICY "Users read own job custom items" ON job_custom_items FOR SELECT USING (
+CREATE POLICY "Users can view own job custom items" ON job_custom_items FOR SELECT USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_custom_items.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users insert own job custom items" ON job_custom_items FOR INSERT WITH CHECK (
+CREATE POLICY "Users can create own job custom items" ON job_custom_items FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_custom_items.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users update own job custom items" ON job_custom_items FOR UPDATE USING (
+CREATE POLICY "Users can update own job custom items" ON job_custom_items FOR UPDATE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_custom_items.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users delete own job custom items" ON job_custom_items FOR DELETE USING (
+CREATE POLICY "Users can delete own job custom items" ON job_custom_items FOR DELETE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_custom_items.job_id AND jobs.user_id = auth.uid())
 );
 
-CREATE POLICY "Users read own job payments" ON job_payments FOR SELECT USING (
+CREATE POLICY "Users can view own job payments" ON job_payments FOR SELECT USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_payments.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users insert own job payments" ON job_payments FOR INSERT WITH CHECK (
+CREATE POLICY "Users can create own job payments" ON job_payments FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_payments.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users update own job payments" ON job_payments FOR UPDATE USING (
+CREATE POLICY "Users can update own job payments" ON job_payments FOR UPDATE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_payments.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users delete own job payments" ON job_payments FOR DELETE USING (
+CREATE POLICY "Users can delete own job payments" ON job_payments FOR DELETE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_payments.job_id AND jobs.user_id = auth.uid())
 );
 
-CREATE POLICY "Users read own job costs" ON job_internal_costs FOR SELECT USING (
+CREATE POLICY "Users can view own job costs" ON job_internal_costs FOR SELECT USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_internal_costs.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users insert own job costs" ON job_internal_costs FOR INSERT WITH CHECK (
+CREATE POLICY "Users can create own job costs" ON job_internal_costs FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_internal_costs.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users update own job costs" ON job_internal_costs FOR UPDATE USING (
+CREATE POLICY "Users can update own job costs" ON job_internal_costs FOR UPDATE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_internal_costs.job_id AND jobs.user_id = auth.uid())
 );
-CREATE POLICY "Users delete own job costs" ON job_internal_costs FOR DELETE USING (
+CREATE POLICY "Users can delete own job costs" ON job_internal_costs FOR DELETE USING (
   EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_internal_costs.job_id AND jobs.user_id = auth.uid())
 );
 
--- Inventory: users see only their own
-CREATE POLICY "Users read own inventory" ON inventory_items FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users insert own inventory" ON inventory_items FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users update own inventory" ON inventory_items FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Users delete own inventory" ON inventory_items FOR DELETE USING (auth.uid() = user_id);
+-- Inventory: full CRUD on own items
+CREATE POLICY "Users can view own inventory" ON inventory_items FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create own inventory" ON inventory_items FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own inventory" ON inventory_items FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own inventory" ON inventory_items FOR DELETE USING (auth.uid() = user_id);
 
--- Inventory transactions: accessible if user owns the parent item
-CREATE POLICY "Users read own inv transactions" ON inventory_transactions FOR SELECT USING (
+-- Inventory transactions: access through item ownership
+CREATE POLICY "Users can view own transactions" ON inventory_transactions FOR SELECT USING (
   EXISTS (SELECT 1 FROM inventory_items WHERE inventory_items.id = inventory_transactions.item_id AND inventory_items.user_id = auth.uid())
 );
-CREATE POLICY "Users insert own inv transactions" ON inventory_transactions FOR INSERT WITH CHECK (
+CREATE POLICY "Users can create own transactions" ON inventory_transactions FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM inventory_items WHERE inventory_items.id = inventory_transactions.item_id AND inventory_items.user_id = auth.uid())
 );
-CREATE POLICY "Users update own inv transactions" ON inventory_transactions FOR UPDATE USING (
+CREATE POLICY "Users can update own transactions" ON inventory_transactions FOR UPDATE USING (
   EXISTS (SELECT 1 FROM inventory_items WHERE inventory_items.id = inventory_transactions.item_id AND inventory_items.user_id = auth.uid())
 );
-CREATE POLICY "Users delete own inv transactions" ON inventory_transactions FOR DELETE USING (
+CREATE POLICY "Users can delete own transactions" ON inventory_transactions FOR DELETE USING (
   EXISTS (SELECT 1 FROM inventory_items WHERE inventory_items.id = inventory_transactions.item_id AND inventory_items.user_id = auth.uid())
 );
 
--- Overheads: users see only their own
-CREATE POLICY "Users read own overheads" ON overhead_costs FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users insert own overheads" ON overhead_costs FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users update own overheads" ON overhead_costs FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Users delete own overheads" ON overhead_costs FOR DELETE USING (auth.uid() = user_id);
+-- Overheads: full CRUD on own
+CREATE POLICY "Users can view own overheads" ON overhead_costs FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create own overheads" ON overhead_costs FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own overheads" ON overhead_costs FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own overheads" ON overhead_costs FOR DELETE USING (auth.uid() = user_id);
 
--- Activity log: users see only their own
-CREATE POLICY "Users read own activity" ON activity_log FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users insert own activity" ON activity_log FOR INSERT WITH CHECK (auth.uid() = user_id);
+-- Activity log: own entries only
+CREATE POLICY "Users can view own activity" ON activity_log FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create own activity" ON activity_log FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own activity" ON activity_log FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own activity" ON activity_log FOR DELETE USING (auth.uid() = user_id);
 
--- App state: users see only their own
-CREATE POLICY "Users read own state" ON app_state FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users insert own state" ON app_state FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users update own state" ON app_state FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Users delete own state" ON app_state FOR DELETE USING (auth.uid() = user_id);
+-- App state: own entries only
+CREATE POLICY "Users can view own state" ON app_state FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create own state" ON app_state FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own state" ON app_state FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own state" ON app_state FOR DELETE USING (auth.uid() = user_id);

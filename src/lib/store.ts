@@ -7,13 +7,12 @@ import type {
   OverheadCost,
   ActivityLog,
   ViewPage,
-  ServiceItem,
-  CustomItem,
   Payment,
   InternalCost,
-  CasingType,
   PaymentStatus,
 } from './types';
+import { createClient } from '@/lib/supabase-browser';
+import type { Session } from '@supabase/supabase-js';
 
 interface AppState {
   // Navigation
@@ -31,6 +30,10 @@ interface AppState {
   // Loading state
   isLoading: boolean;
   isInitialized: boolean;
+
+  // Session for auth
+  session: Session | null;
+  setSession: (session: Session | null) => void;
 
   // Actions — Data Loading
   fetchAllData: () => Promise<void>;
@@ -70,8 +73,23 @@ interface AppState {
   getInventoryItemByName: (pattern: string) => InventoryItem | undefined;
 }
 
-// Local activity log for immediate UI feedback (server sync is async)
-let localActivityQueue: { action: string; details: string; type: ActivityLog['type'] }[] = [];
+// Helper: make authenticated fetch requests
+async function authFetch(url: string, options?: RequestInit): Promise<Response> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  return fetch(url, { ...options, headers });
+}
 
 export const useStore = create<AppState>()(
   (set, get) => ({
@@ -91,6 +109,10 @@ export const useStore = create<AppState>()(
     isLoading: false,
     isInitialized: false,
 
+    // Session
+    session: null,
+    setSession: (session) => set({ session }),
+
     // ─── Data Loading ─────────────────────────────────────
     fetchAllData: async () => {
       if (get().isLoading) return;
@@ -98,12 +120,12 @@ export const useStore = create<AppState>()(
 
       try {
         const [jobsRes, invRes, txRes, overheadRes, activityRes, stateRes] = await Promise.all([
-          fetch('/api/jobs'),
-          fetch('/api/inventory'),
-          fetch('/api/inventory/transactions'),
-          fetch('/api/overheads'),
-          fetch('/api/activity'),
-          fetch('/api/state'),
+          authFetch('/api/jobs'),
+          authFetch('/api/inventory'),
+          authFetch('/api/inventory/transactions'),
+          authFetch('/api/overheads'),
+          authFetch('/api/activity'),
+          authFetch('/api/state'),
         ]);
 
         const jobsData = jobsRes.ok ? await jobsRes.json() : [];
@@ -132,9 +154,8 @@ export const useStore = create<AppState>()(
     // ─── Jobs ────────────────────────────────────────────
     addJob: async (jobData) => {
       try {
-        const res = await fetch('/api/jobs', {
+        const res = await authFetch('/api/jobs', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(jobData),
         });
 
@@ -146,7 +167,8 @@ export const useStore = create<AppState>()(
           }));
           get().addActivity('Job Created', `New job for ${jobData.customerName} at ${jobData.location}`, 'job');
         } else {
-          console.error('Failed to create job:', await res.text());
+          const err = await res.text();
+          console.error('Failed to create job:', err);
         }
       } catch (error) {
         console.error('Failed to create job:', error);
@@ -155,9 +177,8 @@ export const useStore = create<AppState>()(
 
     updateJob: async (id, updates) => {
       try {
-        const res = await fetch(`/api/jobs/${id}`, {
+        const res = await authFetch(`/api/jobs/${id}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updates),
         });
 
@@ -174,9 +195,8 @@ export const useStore = create<AppState>()(
 
     startJob: async (id) => {
       try {
-        const res = await fetch(`/api/jobs/${id}`, {
+        const res = await authFetch(`/api/jobs/${id}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'active' }),
         });
 
@@ -194,15 +214,12 @@ export const useStore = create<AppState>()(
 
     completeJob: async (id, data) => {
       try {
-        const res = await fetch(`/api/jobs/${id}/complete`, {
+        const res = await authFetch(`/api/jobs/${id}/complete`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
         });
 
         if (res.ok) {
-          const result = await res.json();
-          // Refresh all data since inventory also changes
           await get().fetchAllData();
           const job = get().jobs.find((j) => j.id === id);
           get().addActivity('Job Completed', `Job for ${job?.customerName} completed - ${data.depthDrilled}ft drilled`, 'job');
@@ -214,14 +231,12 @@ export const useStore = create<AppState>()(
 
     generateBill: async (id, finalBillAmount) => {
       try {
-        const res = await fetch(`/api/jobs/${id}/bill`, {
+        const res = await authFetch(`/api/jobs/${id}/bill`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ finalBillAmount }),
         });
 
         if (res.ok) {
-          const result = await res.json();
           set((s) => ({
             jobs: s.jobs.map((j) =>
               j.id === id
@@ -239,9 +254,8 @@ export const useStore = create<AppState>()(
 
     addPayment: async (jobId, payment) => {
       try {
-        const res = await fetch(`/api/jobs/${jobId}/payment`, {
+        const res = await authFetch(`/api/jobs/${jobId}/payment`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payment),
         });
 
@@ -271,9 +285,8 @@ export const useStore = create<AppState>()(
 
     addJobCost: async (jobId, cost) => {
       try {
-        const res = await fetch(`/api/jobs/${jobId}/cost`, {
+        const res = await authFetch(`/api/jobs/${jobId}/cost`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(cost),
         });
 
@@ -293,9 +306,8 @@ export const useStore = create<AppState>()(
 
     rateJob: async (jobId, rating) => {
       try {
-        const res = await fetch(`/api/jobs/${jobId}/rate`, {
+        const res = await authFetch(`/api/jobs/${jobId}/rate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ rating }),
         });
 
@@ -311,7 +323,7 @@ export const useStore = create<AppState>()(
 
     closeJob: async (id) => {
       try {
-        const res = await fetch(`/api/jobs/${id}/close`, {
+        const res = await authFetch(`/api/jobs/${id}/close`, {
           method: 'POST',
         });
 
@@ -332,9 +344,8 @@ export const useStore = create<AppState>()(
     // ─── Inventory ───────────────────────────────────────
     addInventoryItem: async (item) => {
       try {
-        const res = await fetch('/api/inventory', {
+        const res = await authFetch('/api/inventory', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...item,
             currentStock: item.openingStock,
@@ -356,15 +367,12 @@ export const useStore = create<AppState>()(
 
     addPurchase: async (itemId, quantity, costPerUnit, supplier, note) => {
       try {
-        const res = await fetch(`/api/inventory/${itemId}/purchase`, {
+        const res = await authFetch(`/api/inventory/${itemId}/purchase`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ quantity, costPerUnit, supplier, note }),
         });
 
         if (res.ok) {
-          const result = await res.json();
-          // Refresh inventory data
           await get().fetchAllData();
           const item = get().inventoryItems.find((i) => i.id === itemId);
           get().addActivity('Inventory Purchase', `${quantity} ${item?.unit} of ${item?.name} purchased`, 'inventory');
@@ -379,9 +387,8 @@ export const useStore = create<AppState>()(
         const item = get().inventoryItems.find((i) => i.id === itemId);
         if (!item || item.currentStock < quantity) return;
 
-        const res = await fetch(`/api/inventory/${itemId}/use`, {
+        const res = await authFetch(`/api/inventory/${itemId}/use`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ quantity, jobId, note }),
         });
 
@@ -399,9 +406,8 @@ export const useStore = create<AppState>()(
         const item = get().inventoryItems.find((i) => i.id === itemId);
         if (!item || item.currentStock < quantity) return;
 
-        const res = await fetch(`/api/inventory/${itemId}/destroy`, {
+        const res = await authFetch(`/api/inventory/${itemId}/destroy`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ quantity, note }),
         });
 
@@ -417,9 +423,8 @@ export const useStore = create<AppState>()(
     // ─── Overhead Costs ──────────────────────────────────
     addOverheadCost: async (cost) => {
       try {
-        const res = await fetch('/api/overheads', {
+        const res = await authFetch('/api/overheads', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(cost),
         });
 
@@ -442,13 +447,12 @@ export const useStore = create<AppState>()(
         timestamp: new Date().toISOString(),
         type,
       };
-      // Add to local state immediately for UI responsiveness
+      // Add to local state immediately
       set((s) => ({ activityLog: [entry, ...s.activityLog].slice(0, 100) }));
 
       // Fire-and-forget to server
-      fetch('/api/activity', {
+      authFetch('/api/activity', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, details, type }),
       }).catch((err) => console.error('Failed to log activity:', err));
     },

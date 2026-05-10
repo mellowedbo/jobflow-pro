@@ -30,25 +30,39 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — CRITICAL: never commit real Supabase keys!
+.env
+.env.local
+.env.production
+
+# Keep the example env file
+!.env.example
 
 # vercel
 .vercel
 
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-local-*
-.claude
-.z-ai-config
+
+# logs
 *.log
 dev.log
-dev.out.log
-test
+server.log
+
+# AI / dev tools
+.claude
+.z-ai-config
 prompt
 
-server.log
-# Skills directory
+# Old project backup (too large for repo)
+jobflow-pro-main/
+
+# Database files
+db/
+
+# Skills
 /skills/
+
+# Worklog (dev only)
+worklog.md
