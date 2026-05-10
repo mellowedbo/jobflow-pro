@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
-import { createClient } from '@/lib/supabase-browser';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser';
 import type { ViewPage } from '@/lib/types';
 import type { User } from '@supabase/supabase-js';
 import {
@@ -23,6 +23,8 @@ import {
   Drill,
   LogOut,
   Loader2,
+  Eye,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -80,16 +82,19 @@ function ThemeToggle() {
   );
 }
 
-function SidebarContent({ onNavClick, user }: { onNavClick?: () => void; user: User | null }) {
+function SidebarContent({ onNavClick, user, isGuest, onExitGuest, onSignOut }: {
+  onNavClick?: () => void;
+  user: User | null;
+  isGuest: boolean;
+  onExitGuest: () => void;
+  onSignOut: () => void;
+}) {
   const { currentView, setCurrentView } = useStore();
   const activeJobs = useStore((s) => s.jobs.filter((j) => j.status === 'active' || j.status === 'scheduled').length);
 
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-  };
-
-  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Operator';
+  const userName = isGuest
+    ? 'Guest User'
+    : user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Operator';
   const initials = userName.substring(0, 2).toUpperCase();
 
   return (
@@ -154,19 +159,25 @@ function SidebarContent({ onNavClick, user }: { onNavClick?: () => void; user: U
       {/* Footer with user info & sign out */}
       <div className="flex items-center gap-3 px-4 py-3">
         <Avatar className="h-8 w-8">
-          <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-xs font-bold">{initials}</AvatarFallback>
+          <AvatarFallback className={`text-xs font-bold ${
+            isGuest
+              ? 'bg-amber-200 text-amber-800 dark:bg-amber-800 dark:text-amber-200'
+              : 'bg-sidebar-accent text-sidebar-foreground'
+          }`}>{initials}</AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-medium text-sidebar-foreground truncate">{userName}</p>
-          <p className="text-[10px] text-sidebar-foreground/50 truncate">{user?.email}</p>
+          <p className="text-[10px] text-sidebar-foreground/50 truncate">
+            {isGuest ? 'Demo Mode' : user?.email}
+          </p>
         </div>
         <ThemeToggle />
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleSignOut}
+          onClick={isGuest ? onExitGuest : onSignOut}
           className="h-8 w-8 text-sidebar-foreground hover:bg-red-500/20 hover:text-red-400"
-          title="Sign out"
+          title={isGuest ? 'Exit demo' : 'Sign out'}
         >
           <LogOut className="h-4 w-4" />
         </Button>
@@ -204,6 +215,9 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const isGuest = useStore((s) => s.isGuest);
+  const enterGuestMode = useStore((s) => s.enterGuestMode);
+  const exitGuestMode = useStore((s) => s.exitGuestMode);
   const currentView = useStore((s) => s.currentView);
   const isInitialized = useStore((s) => s.isInitialized);
   const fetchAllData = useStore((s) => s.fetchAllData);
@@ -211,9 +225,14 @@ export default function AppShell() {
 
   // Listen for auth state changes
   useEffect(() => {
+    // If Supabase not configured, skip auth check
+    if (!isSupabaseConfigured()) {
+      setAuthLoading(false);
+      return;
+    }
+
     const supabase = createClient();
 
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
         console.error('[DrillOps] getSession error:', error.message);
@@ -225,7 +244,6 @@ export default function AppShell() {
       setAuthLoading(false);
     });
 
-    // Listen for auth changes (login, logout, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
@@ -233,12 +251,28 @@ export default function AppShell() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch data from Supabase when user is logged in
+  // Fetch data when user is logged in (not guest)
   useEffect(() => {
-    if (user && !isInitialized) {
+    if (user && !isInitialized && !isGuest) {
       fetchAllData();
     }
-  }, [user, isInitialized, fetchAllData]);
+  }, [user, isInitialized, isGuest, fetchAllData]);
+
+  const handleGuestMode = () => {
+    enterGuestMode();
+  };
+
+  const handleExitGuest = () => {
+    exitGuestMode();
+  };
+
+  const handleSignOut = async () => {
+    if (isSupabaseConfigured()) {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    }
+    setUser(null);
+  };
 
   // Show loading while checking auth
   if (authLoading) {
@@ -257,13 +291,13 @@ export default function AppShell() {
     );
   }
 
-  // Show auth page if not logged in
-  if (!user) {
-    return <AuthPage />;
+  // Show auth page if not logged in and not guest
+  if (!user && !isGuest) {
+    return <AuthPage onGuestMode={handleGuestMode} />;
   }
 
-  // Show loading while fetching data
-  if (!isInitialized) {
+  // Show loading while fetching data (not guest)
+  if (!isGuest && user && !isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
         <div className="flex flex-col items-center gap-4">
@@ -281,21 +315,48 @@ export default function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      {/* Guest mode banner */}
+      {isGuest && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-amber-950 px-4 py-1.5 text-center text-xs font-medium flex items-center justify-center gap-2">
+          <Eye className="h-3.5 w-3.5" />
+          <span>Demo Mode — data is sample only and won&apos;t be saved</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[10px] ml-2 bg-amber-600 hover:bg-amber-700 text-white px-2"
+            onClick={handleExitGuest}
+          >
+            Exit Demo
+          </Button>
+        </div>
+      )}
+
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
-        <SidebarContent user={user} />
+      <aside className={`hidden lg:flex w-64 shrink-0 flex-col bg-sidebar border-r border-sidebar-border ${isGuest ? 'mt-8' : ''}`}>
+        <SidebarContent
+          user={user}
+          isGuest={isGuest}
+          onExitGuest={handleExitGuest}
+          onSignOut={handleSignOut}
+        />
       </aside>
 
       {/* Mobile Sidebar */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-64 p-0 bg-sidebar border-sidebar-border">
           <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-          <SidebarContent onNavClick={() => setMobileOpen(false)} user={user} />
+          <SidebarContent
+            onNavClick={() => setMobileOpen(false)}
+            user={user}
+            isGuest={isGuest}
+            onExitGuest={() => { handleExitGuest(); setMobileOpen(false); }}
+            onSignOut={handleSignOut}
+          />
         </SheetContent>
       </Sheet>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className={`flex flex-1 flex-col overflow-hidden ${isGuest ? 'mt-8' : ''}`}>
         {/* Top Bar */}
         <header className="flex h-14 items-center gap-3 border-b bg-card px-4 shrink-0">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>

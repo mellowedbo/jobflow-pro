@@ -1,25 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient, isSupabaseConfigured, getSupabaseDebugInfo, testSupabaseConnection, getSupabaseUrl } from '@/lib/supabase-browser';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, WifiOff, RefreshCw, Activity } from 'lucide-react';
+import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, Eye, Rocket } from 'lucide-react';
 
-interface ConnectionTestResult {
-  ok: boolean;
-  status: number | null;
-  message: string;
-  url: string;
-  serverResult?: any;
+interface AuthPageProps {
+  onGuestMode?: () => void;
 }
 
-export default function AuthPage() {
+export default function AuthPage({ onGuestMode }: AuthPageProps) {
   const supabaseConfigured = isSupabaseConfigured();
-  const debugInfo = getSupabaseDebugInfo();
-  const supabaseUrl = getSupabaseUrl();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,43 +23,6 @@ export default function AuthPage() {
   const [success, setSuccess] = useState('');
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
-  // Connection test state
-  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
-  const [testing, setTesting] = useState(false);
-
-  const runConnectionTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-
-    try {
-      // Test from browser
-      const browserResult = await testSupabaseConnection();
-
-      // Test from server (bypasses CORS)
-      let serverResult = null;
-      try {
-        const serverRes = await fetch('/api/health/supabase');
-        serverResult = await serverRes.json();
-      } catch {
-        serverResult = { ok: false, error: 'Cannot reach our own API route — app may not be deployed correctly' };
-      }
-
-      setTestResult({
-        ...browserResult,
-        serverResult,
-      });
-    } catch (err: any) {
-      setTestResult({
-        ok: false,
-        status: null,
-        message: err?.message || 'Test failed',
-        url: supabaseUrl,
-      });
-    }
-
-    setTesting(false);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -73,7 +30,7 @@ export default function AuthPage() {
     setNeedsConfirmation(false);
 
     if (!supabaseConfigured) {
-      setError('Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your Vercel environment variables and redeploy.');
+      setError('Supabase is not configured. Click "Try as Guest" to explore the app with demo data, or set up environment variables.');
       return;
     }
 
@@ -96,9 +53,7 @@ export default function AuthPage() {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: { full_name: fullName },
-          },
+          options: { data: { full_name: fullName } },
         });
 
         if (signUpError) {
@@ -110,7 +65,7 @@ export default function AuthPage() {
         if (data.user && data.session) {
           setSuccess('Account created! Signing you in...');
         } else if (data.user && !data.session) {
-          setSuccess('Account created! Check your email for a verification link, then come back to sign in.');
+          setSuccess('Account created! Check your email for verification, then sign in.');
           setNeedsConfirmation(true);
           setIsSignUp(false);
         } else {
@@ -118,18 +73,15 @@ export default function AuthPage() {
           setIsSignUp(false);
         }
       } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
         if (signInError) {
           const msg = signInError.message || '';
           if (msg.includes('Email not confirmed') || msg.includes('email_not_confirmed')) {
-            setError('Your email is not verified yet. Check your inbox/spam for the verification email, or ask admin to disable email confirmation in Supabase.');
+            setError('Email not verified. Check your inbox, or disable "Confirm email" in Supabase Dashboard → Authentication → Settings.');
             setNeedsConfirmation(true);
           } else if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials')) {
-            setError('Invalid email or password. Please check your credentials and try again.');
+            setError('Invalid email or password.');
           } else {
             setError(msg);
           }
@@ -138,16 +90,9 @@ export default function AuthPage() {
     } catch (err: any) {
       const msg = err?.message || '';
       if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Network request failed')) {
-        setError(
-          `Cannot connect to Supabase at ${supabaseUrl}\n\n` +
-          'This usually means:\n' +
-          '1. Your Supabase project is PAUSED — go to supabase.com and click "Restore"\n' +
-          '2. The Supabase URL is wrong — it should look like https://abc123.supabase.co\n' +
-          '3. The anon key is wrong — make sure you copied the "anon public" key, not the service role key\n\n' +
-          'Click "Test Connection" below for a detailed diagnosis.'
-        );
+        setError('Cannot connect to Supabase. Your project may be paused — go to supabase.com and click "Restore". Or try Guest Mode to explore the app.');
       } else {
-        setError(msg || 'An unexpected error occurred. Please try again.');
+        setError(msg || 'An unexpected error occurred.');
       }
     }
 
@@ -166,121 +111,49 @@ export default function AuthPage() {
           <p className="text-sm text-muted-foreground mt-1">Borewell Operations Management</p>
         </div>
 
-        {/* Supabase not configured warning */}
-        {!supabaseConfigured && (
-          <div className="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800 p-4 text-sm">
-            <div className="flex items-center gap-2 font-semibold text-red-700 dark:text-red-400 mb-2">
-              <WifiOff className="h-4 w-4" />
-              Supabase Not Connected
-            </div>
-            <p className="text-red-600 dark:text-red-400 text-xs mb-2">
-              The app cannot connect to Supabase because the environment variables are missing or invalid.
-            </p>
-            <div className="text-xs text-red-500 dark:text-red-400/70 space-y-1">
-              <p><strong>To fix this:</strong></p>
-              <ol className="list-decimal ml-4 space-y-1">
-                <li>Go to your <strong>Vercel Dashboard</strong></li>
-                <li>Select your project → <strong>Settings</strong> → <strong>Environment Variables</strong></li>
-                <li>Add these two variables:
-                  <div className="mt-1 font-mono bg-red-100 dark:bg-red-900/30 rounded p-2 text-[11px]">
-                    NEXT_PUBLIC_SUPABASE_URL = https://your-project.supabase.co<br/>
-                    NEXT_PUBLIC_SUPABASE_ANON_KEY = eyJ...your-key
-                  </div>
-                </li>
-                <li>Go to <strong>Deployments</strong> → Click <strong>Redeploy</strong></li>
-              </ol>
-              <p className="mt-2 font-mono">Debug: <code className="bg-red-100 dark:bg-red-900/30 px-1 rounded">{debugInfo}</code></p>
-            </div>
-          </div>
-        )}
-
-        {/* Green connection banner with Test button */}
-        {supabaseConfigured && (
-          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3">
-            <div className="flex items-center justify-between">
-              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono">
-                Supabase URL: {supabaseUrl}
+        {/* Guest Mode Card - PROMINENT */}
+        <Card className="mb-4 border-2 border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 shadow-lg">
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shrink-0">
+                <Rocket className="h-5 w-5" />
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 text-[10px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
-                onClick={runConnectionTest}
-                disabled={testing}
-              >
-                {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Activity className="h-3 w-3" />}
-                Test Connection
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Connection test results */}
-        {testResult && (
-          <div className={`mb-4 rounded-lg border p-3 text-xs ${
-            testResult.ok
-              ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-700'
-              : 'border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700'
-          }`}>
-            <div className="font-semibold mb-2 flex items-center gap-1">
-              {testResult.ok ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-              ) : (
-                <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-              )}
-              Connection Test Result
-            </div>
-            <div className="space-y-2 font-mono">
-              <div>
-                <span className="font-bold">Browser → Supabase:</span>{' '}
-                {testResult.ok ? (
-                  <span className="text-emerald-700 dark:text-emerald-400">{testResult.message}</span>
-                ) : (
-                  <span className="text-amber-700 dark:text-amber-400 whitespace-pre-line">{testResult.message}</span>
-                )}
+              <div className="flex-1">
+                <h3 className="font-bold text-emerald-800 dark:text-emerald-300">Try Demo Mode</h3>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  Explore the full app with sample data — no account needed. Changes won&apos;t be saved.
+                </p>
+                <Button
+                  className="mt-3 w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={onGuestMode}
+                >
+                  <Eye className="h-4 w-4" />
+                  Launch Demo
+                </Button>
               </div>
-              {testResult.serverResult && (
-                <div>
-                  <span className="font-bold">Server → Supabase:</span>{' '}
-                  {testResult.serverResult.ok ? (
-                    <span className="text-emerald-700 dark:text-emerald-400">
-                      OK (REST: HTTP {testResult.serverResult.restApi?.status}, Auth: {testResult.serverResult.authApi?.status})
-                    </span>
-                  ) : (
-                    <span className="text-amber-700 dark:text-amber-400">
-                      {testResult.serverResult.error || 'Failed'}
-                      {testResult.serverResult.hint && <span className="block mt-1">{testResult.serverResult.hint}</span>}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
-            {!testResult.ok && (
-              <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400 border-t border-amber-200 dark:border-amber-800 pt-2">
-                <strong>Quick fixes:</strong>
-                <ul className="list-disc ml-4 mt-1 space-y-0.5">
-                  <li>Check your Supabase project is not <strong>paused</strong> at supabase.com dashboard</li>
-                  <li>Verify URL format: <code>https://your-ref.supabase.co</code> (no trailing slash)</li>
-                  <li>Make sure you used the <strong>anon public</strong> key, not the service role key</li>
-                  <li>In Supabase, go to Authentication → Settings → disable &quot;Confirm email&quot; for testing</li>
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
+          </CardContent>
+        </Card>
 
+        {/* Auth Card */}
         <Card className="shadow-xl border-0 dark:border">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-xl">
-              {isSignUp ? 'Create Account' : 'Welcome Back'}
+              {isSignUp ? 'Create Account' : 'Sign In'}
             </CardTitle>
             <CardDescription>
               {isSignUp
-                ? 'Sign up to start managing your drilling operations'
+                ? 'Sign up to save your drilling data to the cloud'
                 : 'Sign in to your DrillOps Pro account'}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4">
+            {!supabaseConfigured && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+                <strong>Note:</strong> Supabase is not connected. Use Demo Mode above, or configure env vars to enable cloud sync.
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {isSignUp && (
                 <div className="space-y-2">
@@ -348,7 +221,7 @@ export default function AuthPage() {
 
               {needsConfirmation && !isSignUp && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs text-amber-700 dark:text-amber-400">
-                  <strong>Tip:</strong> If you didn&apos;t receive the email, check your spam folder. You can also ask your admin to disable email confirmation in Supabase Dashboard &rarr; Authentication &rarr; Settings &rarr; turn off &quot;Confirm email&quot;.
+                  <strong>Tip:</strong> Disable email confirmation in Supabase Dashboard → Authentication → Settings → turn off &quot;Confirm email&quot;.
                 </div>
               )}
 
@@ -364,7 +237,7 @@ export default function AuthPage() {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
+            <div className="mt-4 text-center">
               <p className="text-sm text-muted-foreground">
                 {isSignUp ? 'Already have an account?' : "Don't have an account?"}
               </p>
