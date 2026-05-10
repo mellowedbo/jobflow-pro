@@ -33,6 +33,7 @@ import {
   Legend,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import { useMounted } from '@/lib/utils';
 
 const CHART_COLORS = ['#10b981', '#f59e0b', '#6366f1', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -89,6 +90,7 @@ function StatCard({
 }
 
 export default function DashboardView() {
+  const mounted = useMounted();
   const jobs = useStore((s) => s.jobs);
   const inventoryItems = useStore((s) => s.inventoryItems);
   const overheadCosts = useStore((s) => s.overheadCosts);
@@ -413,7 +415,7 @@ export default function DashboardView() {
                   <p className="text-xs font-medium">{log.action}</p>
                   <p className="text-[11px] text-muted-foreground truncate">{log.details}</p>
                   <p className="text-[10px] text-muted-foreground/60 font-mono">
-                    {format(parseISO(log.timestamp), 'dd MMM yyyy HH:mm')}
+                    {mounted ? format(parseISO(log.timestamp), 'dd MMM yyyy HH:mm') : log.timestamp}
                   </p>
                 </div>
               </div>

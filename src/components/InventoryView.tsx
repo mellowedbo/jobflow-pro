@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useMounted } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import type { InventoryItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,7 @@ import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 
 export default function InventoryView() {
+  const mounted = useMounted();
   const inventoryItems = useStore((s) => s.inventoryItems);
   const inventoryTransactions = useStore((s) => s.inventoryTransactions);
   const addInventoryItem = useStore((s) => s.addInventoryItem);
@@ -248,7 +250,7 @@ export default function InventoryView() {
                   const item = inventoryItems.find((i) => i.id === tx.itemId);
                   return (
                     <TableRow key={tx.id}>
-                      <TableCell className="font-mono text-xs">{format(parseISO(tx.date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="font-mono text-xs">{mounted ? format(parseISO(tx.date), 'dd MMM yyyy') : tx.date}</TableCell>
                       <TableCell className="font-medium">{item?.name || '—'}</TableCell>
                       <TableCell>
                         <Badge

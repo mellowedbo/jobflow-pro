@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useMounted } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -37,6 +38,7 @@ interface CustomerData {
 }
 
 export default function CustomersView() {
+  const mounted = useMounted();
   const jobs = useStore((s) => s.jobs);
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
@@ -247,7 +249,7 @@ export default function CustomersView() {
                           <span>{job.location}</span>
                           <span className="mx-1">|</span>
                           <Calendar className="h-3 w-3" />
-                          <span>{format(parseISO(job.scheduledDate), 'dd MMM yyyy')}</span>
+                          <span>{mounted ? format(parseISO(job.scheduledDate), 'dd MMM yyyy') : job.scheduledDate}</span>
                         </div>
                         {job.depthDrilled && (
                           <div className="flex gap-3 text-xs">

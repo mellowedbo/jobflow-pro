@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useMounted } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import type { Job, Payment } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -56,6 +57,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function CompletedJobsView() {
+  const mounted = useMounted();
   const jobs = useStore((s) => s.jobs);
   const generateBill = useStore((s) => s.generateBill);
   const addPayment = useStore((s) => s.addPayment);
@@ -143,25 +145,27 @@ export default function CompletedJobsView() {
         <Accordion type="multiple" className="space-y-3">
           {completedJobs.map((job) => (
             <AccordionItem key={job.id} value={job.id} className="border rounded-lg px-0">
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                <div className="flex flex-1 items-center justify-between gap-3 text-left">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-sm">{job.customerName}</p>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_COLORS[job.status]}`}>
-                        {job.status}
-                      </span>
+              <div className="relative">
+                <AccordionTrigger className="px-4 py-3 hover:no-underline pr-24">
+                  <div className="flex flex-1 items-center gap-3 text-left">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm">{job.customerName}</p>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_COLORS[job.status]}`}>
+                          {job.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{job.location} | {mounted && job.completedAt ? format(parseISO(job.completedAt), 'dd MMM yyyy') : (job.completedAt || '—')}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground">{job.location} | {job.completedAt ? format(parseISO(job.completedAt), 'dd MMM yyyy') : '—'}</p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-mono text-sm font-bold">
-                      {job.finalBillAmount ? `₹${job.finalBillAmount.toLocaleString('en-IN')}` : 'Not Billed'}
-                    </p>
-                    <StarRating rating={job.rating || 0} onRate={(r) => rateJob(job.id, r)} />
-                  </div>
+                </AccordionTrigger>
+                <div className="absolute right-4 top-3 text-right shrink-0 z-10">
+                  <p className="font-mono text-sm font-bold">
+                    {job.finalBillAmount ? `₹${job.finalBillAmount.toLocaleString('en-IN')}` : 'Not Billed'}
+                  </p>
+                  <StarRating rating={job.rating || 0} onRate={(r) => rateJob(job.id, r)} />
                 </div>
-              </AccordionTrigger>
+              </div>
               <AccordionContent className="px-4 pb-4">
                 <div className="space-y-4">
                   {/* Job details grid */}
@@ -206,7 +210,7 @@ export default function CompletedJobsView() {
                           <div key={p.id} className="flex items-center justify-between text-xs rounded border p-2">
                             <div className="flex items-center gap-2">
                               <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              <span className="font-mono">{format(parseISO(p.date), 'dd MMM yyyy')}</span>
+                              <span className="font-mono">{mounted ? format(parseISO(p.date), 'dd MMM yyyy') : p.date}</span>
                               {p.method && <Badge variant="outline" className="text-[9px]">{p.method}</Badge>}
                               {p.note && <span className="text-muted-foreground">— {p.note}</span>}
                             </div>
@@ -321,15 +325,18 @@ function StarRating({ rating, onRate }: { rating: number; onRate: (r: number) =>
   return (
     <div className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map((star) => (
-        <button
+        <span
           key={star}
+          role="button"
+          tabIndex={0}
           onClick={(e) => { e.stopPropagation(); onRate(star); }}
-          className="p-0 hover:scale-110 transition-transform"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onRate(star); } }}
+          className="cursor-pointer p-0 hover:scale-110 transition-transform inline-flex"
         >
           <Star
             className={`h-3 w-3 ${star <= rating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30'}`}
           />
-        </button>
+        </span>
       ))}
     </div>
   );

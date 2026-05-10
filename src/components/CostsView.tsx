@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useMounted } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,7 @@ import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 
 export default function CostsView() {
+  const mounted = useMounted();
   const jobs = useStore((s) => s.jobs);
   const overheadCosts = useStore((s) => s.overheadCosts);
   const inventoryItems = useStore((s) => s.inventoryItems);
@@ -313,7 +315,7 @@ export default function CostsView() {
               <TableBody>
                 {overheadCosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((cost) => (
                   <TableRow key={cost.id}>
-                    <TableCell className="font-mono text-xs">{format(parseISO(cost.date), 'dd MMM yyyy')}</TableCell>
+                    <TableCell className="font-mono text-xs">{mounted ? format(parseISO(cost.date), 'dd MMM yyyy') : cost.date}</TableCell>
                     <TableCell><Badge variant="outline" className="text-[10px]">{cost.category}</Badge></TableCell>
                     <TableCell className="text-sm">{cost.description}</TableCell>
                     <TableCell className="text-right font-mono">₹{cost.amount.toLocaleString('en-IN')}</TableCell>

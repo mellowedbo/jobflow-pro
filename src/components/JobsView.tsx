@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useMounted } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { PREDEFINED_SERVICES } from '@/lib/types';
 import type { CasingType, ServiceItem, CustomItem } from '@/lib/types';
@@ -48,6 +49,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function JobsView() {
+  const mounted = useMounted();
   const jobs = useStore((s) => s.jobs);
   const addJob = useStore((s) => s.addJob);
   const startJob = useStore((s) => s.startJob);
@@ -150,7 +152,7 @@ export default function JobsView() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Calendar className="h-3 w-3" />
-                    <span>{format(parseISO(job.scheduledDate), 'dd MMM yyyy')}</span>
+                    <span>{mounted ? format(parseISO(job.scheduledDate), 'dd MMM yyyy') : job.scheduledDate}</span>
                   </div>
                 </div>
 
