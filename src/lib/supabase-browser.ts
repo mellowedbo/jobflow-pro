@@ -9,7 +9,6 @@ export function createClient() {
   // Return a mock client if env vars aren't configured yet
   if (!url || !key || !url.startsWith('http')) {
     if (!client) {
-      // Create with placeholder — won't actually work but won't crash
       client = createBrowserClient(
         'https://placeholder.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder'
@@ -18,9 +17,7 @@ export function createClient() {
     return client;
   }
 
-  // Singleton pattern — avoid creating multiple clients
-  if (!client) {
-    client = createBrowserClient(url, key);
-  }
-  return client;
+  // Always create a real client when env vars are valid
+  // (don't cache, in case env vars change during dev)
+  return createBrowserClient(url, key);
 }

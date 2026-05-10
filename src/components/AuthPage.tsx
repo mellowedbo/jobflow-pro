@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Drill, Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
+import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function AuthPage() {
   const { signIn, signUp } = useAuth();
@@ -17,11 +17,13 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setNeedsConfirmation(false);
     setLoading(true);
 
     if (isSignUp) {
@@ -39,14 +41,25 @@ export default function AuthPage() {
       if (error) {
         setError(error);
       } else {
-        setSuccess('Account created! Check your email for verification, then sign in.');
+        setSuccess('Account created! Check your email for a verification link, then come back to sign in.');
+        setNeedsConfirmation(true);
         setIsSignUp(false);
       }
     } else {
       const { error } = await signIn(email, password);
       if (error) {
-        setError(error);
+        // Show user-friendly error messages
+        if (error.includes('Email not confirmed') || error.includes('email_not_confirmed')) {
+          setError('Your email is not verified yet. Please check your inbox (and spam folder) for the verification email, then try again.');
+          setNeedsConfirmation(true);
+        } else if (error.includes('Invalid login credentials') || error.includes('invalid_credentials')) {
+          setError('Invalid email or password. Please check your credentials and try again.');
+        } else {
+          setError(error);
+        }
       }
+      // If no error, the auth state change listener in AuthProvider
+      // will automatically update the UI
     }
 
     setLoading(false);
@@ -128,14 +141,22 @@ export default function AuthPage() {
               </div>
 
               {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
-                  {error}
+                <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400 flex gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{error}</span>
                 </div>
               )}
 
-              {success && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 p-3 text-sm text-emerald-700 dark:text-emerald-400">
-                  {success}
+              {success && !error && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 p-3 text-sm text-emerald-700 dark:text-emerald-400 flex gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{success}</span>
+                </div>
+              )}
+
+              {needsConfirmation && !isSignUp && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs text-amber-700 dark:text-amber-400">
+                  <strong>Tip:</strong> If you didn&apos;t receive the email, check your spam folder. You can also ask your admin to disable email confirmation in Supabase Dashboard → Authentication → Settings → turn off &quot;Confirm email&quot;.
                 </div>
               )}
 
@@ -162,6 +183,7 @@ export default function AuthPage() {
                   setIsSignUp(!isSignUp);
                   setError('');
                   setSuccess('');
+                  setNeedsConfirmation(false);
                 }}
               >
                 {isSignUp ? 'Sign in instead' : 'Create an account'}
