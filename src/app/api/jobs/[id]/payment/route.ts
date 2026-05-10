@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import {
   assembleJob,
   fetchJobRelations,
@@ -14,6 +14,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -27,10 +32,11 @@ export async function POST(
     }
 
     // Insert payment record
-    const { error: paymentError } = await supabase
+    const { error: paymentError } = await auth.client
       .from('job_payments')
       .insert({
         job_id: id,
+        user_id: auth.user.id,
         amount,
         date: date ?? new Date().toISOString().split('T')[0],
         method: method ?? null,
@@ -42,7 +48,7 @@ export async function POST(
     }
 
     // Recalculate total_paid from all payments
-    const { data: allPayments } = await supabase
+    const { data: allPayments } = await auth.client
       .from('job_payments')
       .select('amount')
       .eq('job_id', id);
@@ -53,7 +59,7 @@ export async function POST(
     );
 
     // Fetch current job for final_bill_amount
-    const { data: jobData } = await supabase
+    const { data: jobData } = await auth.client
       .from('jobs')
       .select('final_bill_amount, customer_name')
       .eq('id', id)
@@ -67,7 +73,7 @@ export async function POST(
     const paymentStatus = calculatePaymentStatus(totalPaid, finalBillAmount);
 
     // Update job with new total_paid and payment_status
-    const { error: updateError } = await supabase
+    const { error: updateError } = await auth.client
       .from('jobs')
       .update({
         total_paid: totalPaid,
@@ -81,19 +87,21 @@ export async function POST(
 
     // Log activity
     await logActivity(
+      auth.client,
+      auth.user.id,
       'Payment Received',
       `₹${amount.toLocaleString('en-IN')} received from ${customerName ?? id}`,
       'billing'
     );
 
     // Return updated job
-    const { data: updatedJob } = await supabase
+    const { data: updatedJob } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', id)
       .single();
 
-    const relations = await fetchJobRelations(id);
+    const relations = await fetchJobRelations(auth.client, id);
     const result = assembleJob(
       updatedJob as JobRow,
       relations.services,

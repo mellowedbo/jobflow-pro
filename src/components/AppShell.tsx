@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
 import type { ViewPage } from '@/lib/types';
+import type { User } from '@supabase/supabase-js';
 import {
   LayoutDashboard,
   Briefcase,
@@ -18,7 +20,8 @@ import {
   Sun,
   Menu,
   Drill,
-  X,
+  LogOut,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -31,6 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import AuthForm from '@/components/AuthForm';
 import DashboardView from '@/components/DashboardView';
 import JobsView from '@/components/JobsView';
 import CompletedJobsView from '@/components/CompletedJobsView';
@@ -73,9 +77,15 @@ function ThemeToggle() {
   );
 }
 
-function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
+function SidebarContent({ onNavClick, user }: { onNavClick?: () => void; user: User | null }) {
   const { currentView, setCurrentView } = useStore();
   const activeJobs = useStore((s) => s.jobs.filter((j) => j.status === 'active' || j.status === 'scheduled').length);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const initials = user?.email?.substring(0, 2).toUpperCase() || 'OP';
 
   return (
     <div className="flex h-full flex-col">
@@ -136,16 +146,25 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
 
       <Separator className="bg-sidebar-border" />
 
-      {/* Footer */}
+      {/* Footer with user info */}
       <div className="flex items-center gap-3 px-4 py-3">
         <Avatar className="h-8 w-8">
-          <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-xs font-bold">OP</AvatarFallback>
+          <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-xs font-bold">{initials}</AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-sidebar-foreground truncate">Operator</p>
-          <p className="text-[10px] text-sidebar-foreground/50 truncate">admin@drillops.pro</p>
+          <p className="text-xs font-medium text-sidebar-foreground truncate">{user?.email || 'Operator'}</p>
+          <p className="text-[10px] text-sidebar-foreground/50 truncate">Logged in</p>
         </div>
         <ThemeToggle />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleSignOut}
+          className="h-8 w-8 text-sidebar-foreground hover:bg-red-500/20 hover:text-red-400"
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );
@@ -176,28 +195,87 @@ function ViewRenderer({ view }: { view: ViewPage }) {
 
 export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const currentView = useStore((s) => s.currentView);
   const isInitialized = useStore((s) => s.isInitialized);
   const fetchAllData = useStore((s) => s.fetchAllData);
   const currentLabel = navItems.find((n) => n.key === currentView)?.label ?? 'Dashboard';
 
-  // Fetch data from Supabase on first mount
+  // Listen for auth state changes
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    // Listen for auth changes (login, logout, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch data from Supabase when user is logged in
+  useEffect(() => {
+    if (user && !isInitialized) {
+      fetchAllData();
+    }
+  }, [user, isInitialized, fetchAllData]);
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-600 shadow-lg shadow-emerald-600/25 animate-pulse">
+            <Drill className="h-8 w-8 text-white" />
+          </div>
+          <div className="flex items-center gap-2 text-slate-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading DrillOps Pro...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth form if not logged in
+  if (!user) {
+    return <AuthForm />;
+  }
+
+  // Show loading while fetching data
   if (!isInitialized) {
-    fetchAllData();
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-600 shadow-lg shadow-emerald-600/25">
+            <Drill className="h-8 w-8 text-white" />
+          </div>
+          <div className="flex items-center gap-2 text-slate-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading your data...</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
-        <SidebarContent />
+        <SidebarContent user={user} />
       </aside>
 
       {/* Mobile Sidebar */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-64 p-0 bg-sidebar border-sidebar-border">
           <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-          <SidebarContent onNavClick={() => setMobileOpen(false)} />
+          <SidebarContent onNavClick={() => setMobileOpen(false)} user={user} />
         </SheetContent>
       </Sheet>
 

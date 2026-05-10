@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import {
   assembleJob,
   fetchJobRelations,
@@ -9,14 +9,19 @@ import type { JobRow } from '@/lib/api-utils';
 
 // POST /api/jobs/[id]/bill — Generate bill
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
     // Fetch job with relations
-    const { data: jobData, error: jobError } = await supabase
+    const { data: jobData, error: jobError } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', id)
@@ -30,7 +35,7 @@ export async function POST(
     }
 
     const job = jobData as JobRow;
-    const relations = await fetchJobRelations(id);
+    const relations = await fetchJobRelations(auth.client, id);
 
     // Calculate bill
     const drillingCost =
@@ -58,7 +63,7 @@ export async function POST(
       drillingCost + casingCost + servicesCost + customItemsCost + dieselCost;
 
     // Update job
-    const { error: updateError } = await supabase
+    const { error: updateError } = await auth.client
       .from('jobs')
       .update({
         billing_generated: true,
@@ -80,26 +85,28 @@ export async function POST(
           ? 'partial'
           : 'pending';
 
-    await supabase
+    await auth.client
       .from('jobs')
       .update({ payment_status: paymentStatus })
       .eq('id', id);
 
     // Log activity
     await logActivity(
+      auth.client,
+      auth.user.id,
       'Bill Generated',
       `Bill ₹${finalBillAmount.toLocaleString('en-IN')} generated for ${job.customer_name}`,
       'billing'
     );
 
     // Return updated job
-    const { data: updatedJob } = await supabase
+    const { data: updatedJob } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', id)
       .single();
 
-    const freshRelations = await fetchJobRelations(id);
+    const freshRelations = await fetchJobRelations(auth.client, id);
     const result = assembleJob(
       updatedJob as JobRow,
       freshRelations.services,

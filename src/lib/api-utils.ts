@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   Job,
   ServiceItem,
@@ -113,6 +113,8 @@ interface InternalCostRow {
   date: string;
 }
 
+export type { JobRow, ServiceRow, CustomItemRow, PaymentRow, InternalCostRow };
+
 export function assembleJob(
   jobRow: JobRow,
   services: ServiceRow[],
@@ -205,7 +207,10 @@ export function assembleJob(
   };
 }
 
-export async function fetchJobRelations(jobId: string): Promise<{
+export async function fetchJobRelations(
+  client: SupabaseClient,
+  jobId: string
+): Promise<{
   services: ServiceRow[];
   customItems: CustomItemRow[];
   payments: PaymentRow[];
@@ -213,10 +218,10 @@ export async function fetchJobRelations(jobId: string): Promise<{
 }> {
   const [servicesRes, customItemsRes, paymentsRes, costsRes] = await Promise.all(
     [
-      supabase.from('job_services').select('*').eq('job_id', jobId),
-      supabase.from('job_custom_items').select('*').eq('job_id', jobId),
-      supabase.from('job_payments').select('*').eq('job_id', jobId),
-      supabase.from('job_internal_costs').select('*').eq('job_id', jobId),
+      client.from('job_services').select('*').eq('job_id', jobId),
+      client.from('job_custom_items').select('*').eq('job_id', jobId),
+      client.from('job_payments').select('*').eq('job_id', jobId),
+      client.from('job_internal_costs').select('*').eq('job_id', jobId),
     ]
   );
 
@@ -228,7 +233,9 @@ export async function fetchJobRelations(jobId: string): Promise<{
   };
 }
 
-export async function fetchAllJobRelations(): Promise<{
+export async function fetchAllJobRelations(
+  client: SupabaseClient
+): Promise<{
   services: ServiceRow[];
   customItems: CustomItemRow[];
   payments: PaymentRow[];
@@ -236,10 +243,10 @@ export async function fetchAllJobRelations(): Promise<{
 }> {
   const [servicesRes, customItemsRes, paymentsRes, costsRes] = await Promise.all(
     [
-      supabase.from('job_services').select('*'),
-      supabase.from('job_custom_items').select('*'),
-      supabase.from('job_payments').select('*'),
-      supabase.from('job_internal_costs').select('*'),
+      client.from('job_services').select('*'),
+      client.from('job_custom_items').select('*'),
+      client.from('job_payments').select('*'),
+      client.from('job_internal_costs').select('*'),
     ]
   );
 
@@ -281,11 +288,14 @@ export function assembleActivityLog(row: Record<string, unknown>): ActivityLog {
 // ─── Activity Log Helper ───
 
 export async function logActivity(
+  client: SupabaseClient,
+  userId: string,
   action: string,
   details: string,
   type: ActivityLog['type']
 ): Promise<void> {
-  await supabase.from('activity_log').insert({
+  await client.from('activity_log').insert({
+    user_id: userId,
     action,
     details,
     type,

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import {
   assembleJob,
   fetchJobRelations,
@@ -13,6 +13,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -26,10 +31,11 @@ export async function POST(
     }
 
     // Insert internal cost
-    const { error: costError } = await supabase
+    const { error: costError } = await auth.client
       .from('job_internal_costs')
       .insert({
         job_id: id,
+        user_id: auth.user.id,
         type: type ?? 'misc',
         category: category ?? 'job',
         description: description ?? '',
@@ -43,19 +49,21 @@ export async function POST(
 
     // Log activity
     await logActivity(
+      auth.client,
+      auth.user.id,
       'Cost Added',
       `₹${amount.toLocaleString('en-IN')} cost added to job ${id}`,
       'cost'
     );
 
     // Return updated job
-    const { data: updatedJob } = await supabase
+    const { data: updatedJob } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', id)
       .single();
 
-    const relations = await fetchJobRelations(id);
+    const relations = await fetchJobRelations(auth.client, id);
     const result = assembleJob(
       updatedJob as JobRow,
       relations.services,

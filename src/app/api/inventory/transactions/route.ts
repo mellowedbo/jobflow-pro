@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import { mapArrayToCamelCase } from '@/lib/api-utils';
 import type { InventoryTransaction } from '@/lib/types';
 
 // GET /api/inventory/transactions — List all transactions
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const { data, error } = await supabase
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data, error } = await auth.client
       .from('inventory_transactions')
       .select('*')
       .order('date', { ascending: false });

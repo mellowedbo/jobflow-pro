@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import {
   assembleJob,
   fetchJobRelations,
@@ -13,6 +13,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -26,7 +31,7 @@ export async function POST(
     } = body;
 
     // Fetch current job
-    const { data: currentJob, error: fetchError } = await supabase
+    const { data: currentJob, error: fetchError } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', id)
@@ -42,7 +47,7 @@ export async function POST(
     const job = currentJob as JobRow;
 
     // Update job status
-    const { error: updateError } = await supabase
+    const { error: updateError } = await auth.client
       .from('jobs')
       .update({
         status: 'completed',
@@ -61,7 +66,7 @@ export async function POST(
     // Update service quantities_used
     if (serviceQuantitiesUsed) {
       for (const [key, qtyUsed] of Object.entries(serviceQuantitiesUsed)) {
-        await supabase
+        await auth.client
           .from('job_services')
           .update({ quantity_used: qtyUsed as number })
           .eq('job_id', id)
@@ -72,7 +77,7 @@ export async function POST(
     // Update custom item quantities_used
     if (customQuantitiesUsed) {
       for (const [itemId, qtyUsed] of Object.entries(customQuantitiesUsed)) {
-        await supabase
+        await auth.client
           .from('job_custom_items')
           .update({ quantity_used: qtyUsed as number })
           .eq('job_id', id)
@@ -82,7 +87,7 @@ export async function POST(
 
     // Deduct inventory: find casing item by type
     const casingSearchName = job.casing_type === 'GI' ? 'GI Casing' : 'PVC Casing';
-    const { data: casingItems } = await supabase
+    const { data: casingItems } = await auth.client
       .from('inventory_items')
       .select('*')
       .ilike('name', `%${casingSearchName}%`)
@@ -96,7 +101,7 @@ export async function POST(
 
       if (actualQty > 0) {
         // Update inventory stock
-        await supabase
+        await auth.client
           .from('inventory_items')
           .update({
             current_stock: currentStock - actualQty,
@@ -105,8 +110,9 @@ export async function POST(
           .eq('id', casingItem.id);
 
         // Create inventory transaction
-        await supabase.from('inventory_transactions').insert({
+        await auth.client.from('inventory_transactions').insert({
           item_id: casingItem.id,
+          user_id: auth.user.id,
           type: 'used',
           quantity: actualQty,
           cost_per_unit: costPerUnit,
@@ -119,7 +125,7 @@ export async function POST(
     }
 
     // Deduct inventory: find diesel item
-    const { data: dieselItems } = await supabase
+    const { data: dieselItems } = await auth.client
       .from('inventory_items')
       .select('*')
       .ilike('name', '%Diesel%')
@@ -134,7 +140,7 @@ export async function POST(
 
       if (actualQty > 0) {
         // Update inventory stock
-        await supabase
+        await auth.client
           .from('inventory_items')
           .update({
             current_stock: currentStock - actualQty,
@@ -143,8 +149,9 @@ export async function POST(
           .eq('id', dieselItem.id);
 
         // Create inventory transaction
-        await supabase.from('inventory_transactions').insert({
+        await auth.client.from('inventory_transactions').insert({
           item_id: dieselItem.id,
+          user_id: auth.user.id,
           type: 'used',
           quantity: actualQty,
           cost_per_unit: costPerUnit,
@@ -158,19 +165,21 @@ export async function POST(
 
     // Log activity
     await logActivity(
+      auth.client,
+      auth.user.id,
       'Job Completed',
       `Job for ${job.customer_name} completed - ${depthDrilled}ft drilled`,
       'job'
     );
 
     // Return updated job
-    const { data: updatedJob } = await supabase
+    const { data: updatedJob } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', id)
       .single();
 
-    const relations = await fetchJobRelations(id);
+    const relations = await fetchJobRelations(auth.client, id);
     const result = assembleJob(
       updatedJob as JobRow,
       relations.services,

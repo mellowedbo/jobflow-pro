@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import { mapArrayToCamelCase, logActivity } from '@/lib/api-utils';
 import type { InventoryItem, InventoryTransaction } from '@/lib/types';
 
@@ -9,6 +9,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -22,7 +27,7 @@ export async function POST(
     }
 
     // Fetch current item
-    const { data: currentItem, error: fetchError } = await supabase
+    const { data: currentItem, error: fetchError } = await auth.client
       .from('inventory_items')
       .select('*')
       .eq('id', id)
@@ -49,7 +54,7 @@ export async function POST(
     }
 
     // Update inventory item
-    const { error: updateError } = await supabase
+    const { error: updateError } = await auth.client
       .from('inventory_items')
       .update({
         current_stock: currentStock - quantity,
@@ -62,10 +67,11 @@ export async function POST(
     }
 
     // Create transaction
-    const { data: txnData, error: txnError } = await supabase
+    const { data: txnData, error: txnError } = await auth.client
       .from('inventory_transactions')
       .insert({
         item_id: id,
+        user_id: auth.user.id,
         type: 'destroyed',
         quantity,
         cost_per_unit: costPerUnit,
@@ -84,13 +90,15 @@ export async function POST(
     const itemName = (item.name as string) ?? id;
     const itemUnit = (item.unit as string) ?? 'units';
     await logActivity(
+      auth.client,
+      auth.user.id,
       'Inventory Destroyed',
       `${quantity} ${itemUnit} of ${itemName} destroyed/damaged`,
       'inventory'
     );
 
     // Return updated item and transaction
-    const { data: updatedItem } = await supabase
+    const { data: updatedItem } = await auth.client
       .from('inventory_items')
       .select('*')
       .eq('id', id)

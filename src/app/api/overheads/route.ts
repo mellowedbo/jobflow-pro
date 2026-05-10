@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import { mapArrayToCamelCase, keysToSnakeCase, logActivity } from '@/lib/api-utils';
 import type { OverheadCost } from '@/lib/types';
 
 // GET /api/overheads — List all overhead costs
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const { data, error } = await supabase
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data, error } = await auth.client
       .from('overhead_costs')
       .select('*')
       .order('date', { ascending: false });
@@ -26,12 +31,18 @@ export async function GET() {
 // POST /api/overheads — Add overhead cost
 export async function POST(request: Request) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
 
     const snakeBody = keysToSnakeCase(body);
     delete snakeBody.id;
+    snakeBody.user_id = auth.user.id;
 
-    const { data, error } = await supabase
+    const { data, error } = await auth.client
       .from('overhead_costs')
       .insert(snakeBody)
       .select()
@@ -43,6 +54,8 @@ export async function POST(request: Request) {
 
     // Log activity
     await logActivity(
+      auth.client,
+      auth.user.id,
       'Overhead Cost',
       `₹${(body.amount ?? 0).toLocaleString('en-IN')} - ${body.description ?? ''}`,
       'cost'

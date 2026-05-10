@@ -1,17 +1,22 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import { mapArrayToCamelCase, keysToSnakeCase } from '@/lib/api-utils';
 import type { InventoryItem } from '@/lib/types';
 
 // GET /api/inventory/[id] — Get a single inventory item
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
-    const { data, error } = await supabase
+    const { data, error } = await auth.client
       .from('inventory_items')
       .select('*')
       .eq('id', id)
@@ -39,6 +44,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -49,8 +59,9 @@ export async function PATCH(
     delete snakeBody.total_purchased;
     delete snakeBody.total_used;
     delete snakeBody.total_destroyed;
+    delete snakeBody.user_id;
 
-    const { data, error } = await supabase
+    const { data, error } = await auth.client
       .from('inventory_items')
       .update(snakeBody)
       .eq('id', id)

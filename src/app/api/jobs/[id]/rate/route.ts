@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import {
   assembleJob,
   fetchJobRelations,
@@ -12,6 +12,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -24,7 +29,7 @@ export async function POST(
       );
     }
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await auth.client
       .from('jobs')
       .update({ rating })
       .eq('id', id);
@@ -34,13 +39,13 @@ export async function POST(
     }
 
     // Return updated job
-    const { data: updatedJob } = await supabase
+    const { data: updatedJob } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', id)
       .single();
 
-    const relations = await fetchJobRelations(id);
+    const relations = await fetchJobRelations(auth.client, id);
     const result = assembleJob(
       updatedJob as JobRow,
       relations.services,

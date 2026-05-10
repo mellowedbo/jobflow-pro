@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getUser } from '@/lib/auth-utils';
 import {
   assembleJob,
   fetchAllJobRelations,
@@ -9,9 +9,14 @@ import {
 import type { JobRow, ServiceRow, CustomItemRow, PaymentRow, InternalCostRow } from '@/lib/api-utils';
 
 // GET /api/jobs — List all jobs with services/custom items/payments/costs
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const { data: jobs, error: jobsError } = await supabase
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: jobs, error: jobsError } = await auth.client
       .from('jobs')
       .select('*')
       .order('created_at', { ascending: false });
@@ -25,7 +30,7 @@ export async function GET() {
       return NextResponse.json([]);
     }
 
-    const relations = await fetchAllJobRelations();
+    const relations = await fetchAllJobRelations(auth.client);
 
     const servicesByJob = groupByJobId<ServiceRow>(relations.services);
     const customItemsByJob = groupByJobId<CustomItemRow>(relations.customItems);
@@ -52,6 +57,11 @@ export async function GET() {
 // POST /api/jobs — Create a job with services and custom items
 export async function POST(request: Request) {
   try {
+    const auth = await getUser(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
 
     const {
@@ -67,6 +77,7 @@ export async function POST(request: Request) {
 
     // Build job row (snake_case)
     const jobRow: Record<string, unknown> = {
+      user_id: auth.user.id,
       customer_name: jobFields.customerName,
       mobile: jobFields.mobile,
       location: jobFields.location,
@@ -83,7 +94,7 @@ export async function POST(request: Request) {
       rating: null,
     };
 
-    const { data: jobData, error: jobError } = await supabase
+    const { data: jobData, error: jobError } = await auth.client
       .from('jobs')
       .insert(jobRow)
       .select()
@@ -100,6 +111,7 @@ export async function POST(request: Request) {
       const serviceRows = serviceItems.map(
         (s: { key: string; name: string; rate: number; quantity: number }) => ({
           job_id: jobId,
+          user_id: auth.user.id,
           key: s.key,
           name: s.name,
           rate: s.rate,
@@ -107,7 +119,7 @@ export async function POST(request: Request) {
           quantity_used: null,
         })
       );
-      const { error: svcError } = await supabase
+      const { error: svcError } = await auth.client
         .from('job_services')
         .insert(serviceRows);
       if (svcError) {
@@ -120,13 +132,14 @@ export async function POST(request: Request) {
       const customRows = customItemInputs.map(
         (c: { name: string; rate: number; quantity: number }) => ({
           job_id: jobId,
+          user_id: auth.user.id,
           name: c.name,
           rate: c.rate,
           quantity: c.quantity,
           quantity_used: null,
         })
       );
-      const { error: ciError } = await supabase
+      const { error: ciError } = await auth.client
         .from('job_custom_items')
         .insert(customRows);
       if (ciError) {
@@ -136,8 +149,9 @@ export async function POST(request: Request) {
 
     // If advance received, create a payment record
     if (advance > 0) {
-      const { error: payError } = await supabase.from('job_payments').insert({
+      const { error: payError } = await auth.client.from('job_payments').insert({
         job_id: jobId,
+        user_id: auth.user.id,
         amount: advance,
         date: new Date().toISOString().split('T')[0],
         method: 'cash',
@@ -150,13 +164,15 @@ export async function POST(request: Request) {
 
     // Log activity
     await logActivity(
+      auth.client,
+      auth.user.id,
       'Job Created',
       `New job for ${jobFields.customerName} at ${jobFields.location}`,
       'job'
     );
 
     // Fetch the complete job with relations
-    const { data: fullJob, error: fetchError } = await supabase
+    const { data: fullJob, error: fetchError } = await auth.client
       .from('jobs')
       .select('*')
       .eq('id', jobId)
@@ -167,7 +183,7 @@ export async function POST(request: Request) {
     }
 
     const { fetchJobRelations } = await import('@/lib/api-utils');
-    const relations = await fetchJobRelations(jobId);
+    const relations = await fetchJobRelations(auth.client, jobId);
     const result = assembleJob(
       fullJob as JobRow,
       relations.services,
