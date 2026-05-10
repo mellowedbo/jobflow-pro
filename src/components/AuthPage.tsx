@@ -1,14 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase-browser';
+import { createClient, isSupabaseConfigured, getSupabaseUrl } from '@/lib/supabase-browser';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Drill, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, WifiOff } from 'lucide-react';
 
 export default function AuthPage() {
+  const supabaseConfigured = isSupabaseConfigured();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,8 +24,13 @@ export default function AuthPage() {
     setError('');
     setSuccess('');
     setNeedsConfirmation(false);
-    setLoading(true);
 
+    if (!supabaseConfigured) {
+      setError('Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your Vercel environment variables and redeploy.');
+      return;
+    }
+
+    setLoading(true);
     const supabase = createClient();
 
     try {
@@ -54,13 +60,9 @@ export default function AuthPage() {
           return;
         }
 
-        // Check if user was auto-confirmed (email confirmation disabled)
-        // If so, they're already signed in — the onAuthStateChange in AppShell will pick it up
         if (data.user && data.session) {
-          // Auto-confirmed and signed in — AppShell will detect the session change
-          setSuccess('Account created! You are now signed in...');
+          setSuccess('Account created! Signing you in...');
         } else if (data.user && !data.session) {
-          // Email confirmation required
           setSuccess('Account created! Check your email for a verification link, then come back to sign in.');
           setNeedsConfirmation(true);
           setIsSignUp(false);
@@ -75,10 +77,9 @@ export default function AuthPage() {
         });
 
         if (signInError) {
-          // Show user-friendly error messages
           const msg = signInError.message || '';
           if (msg.includes('Email not confirmed') || msg.includes('email_not_confirmed')) {
-            setError('Your email is not verified yet. Please check your inbox (and spam folder) for the verification email, then try again.');
+            setError('Your email is not verified yet. Check your inbox/spam for the verification email, or ask admin to disable email confirmation in Supabase.');
             setNeedsConfirmation(true);
           } else if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials')) {
             setError('Invalid email or password. Please check your credentials and try again.');
@@ -89,7 +90,12 @@ export default function AuthPage() {
         // If no error, onAuthStateChange in AppShell will detect the session and redirect
       }
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred. Please try again.');
+      const msg = err?.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Network request failed')) {
+        setError('Cannot connect to Supabase. This usually means:\n1. Supabase env vars are not set in Vercel\n2. Your Supabase project is paused\n3. The Supabase URL is incorrect\n\nPlease check your Vercel project settings → Environment Variables.');
+      } else {
+        setError(msg || 'An unexpected error occurred. Please try again.');
+      }
     }
 
     setLoading(false);
@@ -106,6 +112,34 @@ export default function AuthPage() {
           <h1 className="text-2xl font-bold tracking-tight">DrillOps Pro</h1>
           <p className="text-sm text-muted-foreground mt-1">Borewell Operations Management</p>
         </div>
+
+        {/* Supabase not configured warning */}
+        {!supabaseConfigured && (
+          <div className="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800 p-4 text-sm">
+            <div className="flex items-center gap-2 font-semibold text-red-700 dark:text-red-400 mb-2">
+              <WifiOff className="h-4 w-4" />
+              Supabase Not Connected
+            </div>
+            <p className="text-red-600 dark:text-red-400 text-xs mb-2">
+              The app cannot connect to Supabase because the environment variables are missing or invalid.
+            </p>
+            <div className="text-xs text-red-500 dark:text-red-400/70 space-y-1">
+              <p><strong>To fix this:</strong></p>
+              <ol className="list-decimal ml-4 space-y-1">
+                <li>Go to your <strong>Vercel Dashboard</strong></li>
+                <li>Select your project → <strong>Settings</strong> → <strong>Environment Variables</strong></li>
+                <li>Add these two variables:
+                  <div className="mt-1 font-mono bg-red-100 dark:bg-red-900/30 rounded p-2 text-[11px]">
+                    NEXT_PUBLIC_SUPABASE_URL = https://your-project.supabase.co<br/>
+                    NEXT_PUBLIC_SUPABASE_ANON_KEY = eyJ...your-key
+                  </div>
+                </li>
+                <li>Go to <strong>Deployments</strong> → Click <strong>Redeploy</strong></li>
+              </ol>
+              <p className="mt-2">Detected URL: <code className="bg-red-100 dark:bg-red-900/30 px-1 rounded">{getSupabaseUrl()}</code></p>
+            </div>
+          </div>
+        )}
 
         <Card className="shadow-xl border-0 dark:border">
           <CardHeader className="text-center pb-2">
@@ -173,7 +207,7 @@ export default function AuthPage() {
               {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400 flex gap-2">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
+                  <span className="whitespace-pre-line">{error}</span>
                 </div>
               )}
 
@@ -190,7 +224,7 @@ export default function AuthPage() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full gap-2" disabled={loading}>
+              <Button type="submit" className="w-full gap-2" disabled={loading || !supabaseConfigured}>
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
