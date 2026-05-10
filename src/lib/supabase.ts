@@ -7,6 +7,8 @@ function createSupabaseClient(): SupabaseClient {
   const isValidUrl = supabaseUrl.startsWith('http://') || supabaseUrl.startsWith('https://');
 
   if (!isValidUrl) {
+    // Return a mock client that won't crash but won't work
+    // API routes will return 401 when no valid Supabase is configured
     return createClient('https://placeholder.supabase.co', 'placeholder-key');
   }
 
